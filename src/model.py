@@ -83,8 +83,9 @@ class PatchEmbed(nn.Module):
         )
         if self.use_norm:
             x = nn.LayerNorm(name="norm", epsilon=self.layer_norm_eps)(x)
-        return x
 
+        return x       
+        
 
 class MlpBlock(nn.Module):
     dim: int = 256
@@ -138,6 +139,61 @@ class CrossAttnBlock(nn.Module):
         y = MlpBlock(self.emb_dim * self.mlp_ratio, self.emb_dim)(y)
         return x + y
 
+
+
+class AdaptiveTokenMerger(nn.Module):
+    emb_dim: int
+    num_heads: int
+    adaptive_ratio: int = 2
+    Gh: int = 16
+    Gw: int = 16
+    mlp_ratio: int = 4
+    layer_norm_eps: float = 1e-5
+    
+    @nn.compact
+    def __call__(self, x, deterministic: bool = False):
+        b, t, h, w, c = x.shape
+        
+        # Initial shape for comparison
+        curr_h, curr_w = h, w
+        curr_x = x
+        
+        while curr_h > self.Gh or curr_w > self.Gw:
+            # Average pooling for token reduction
+            y = nn.avg_pool(curr_x, (self.Gh, self.Gw), strides=(self.Gh, self.Gw))
+            B, T, H, W, C = y.shape
+            
+            # Reshape for attention
+            y_flat = y.reshape(B, T, H * W, C)
+            x_flat = curr_x.reshape(b, t, curr_h * curr_w, c)
+            
+            # Layer norm before attention
+            x_flat = nn.LayerNorm(epsilon=self.layer_norm_eps)(x_flat)
+            y_flat = nn.LayerNorm(epsilon=self.layer_norm_eps)(y_flat)
+            
+            # Cross attention between original and pooled tokens
+            attn_out = nn.MultiHeadDotProductAttention(
+                num_heads=self.num_heads, 
+                qkv_features=self.emb_dim
+            )(y_flat, x_flat)
+            
+            # Residual connection
+            y_flat = y_flat + attn_out
+            
+            # MLP block
+            mlp_out = MlpBlock(
+                dim=self.emb_dim * self.mlp_ratio,
+                out_dim=self.emb_dim
+            )(y_flat)
+            
+            # Final residual
+            y_flat = y_flat + mlp_out
+            
+            # Update for next iteration
+            curr_x = y_flat.reshape(B, T, H, W, C)
+            curr_h, curr_w = H, W
+            
+        return curr_x
 
 class TimeAggregation(nn.Module):
     emb_dim: int
@@ -199,6 +255,11 @@ class Encoder(nn.Module):
     mlp_ratio: int = 1
     out_dim: int = 1
     layer_norm_eps: float = 1e-5
+    adaptive_token_merger: bool = False
+    adaptive_mlp_ratio: int = 4
+    Gh: int = 16
+    Gw: int = 16
+    adaptive_ratio: int = 2
 
     @nn.compact
     def __call__(self, x):
@@ -223,6 +284,11 @@ class Encoder(nn.Module):
         )
 
         x = x + t_emb.value[:, :, jnp.newaxis, :] + s_emb.value[:, jnp.newaxis, :, :]
+        
+        if self.adaptive_token_merger:
+            x = x.reshape(b, t, h // self.patch_size[1], w // self.patch_size[2], self.emb_dim)
+            x = AdaptiveTokenMerger(self.emb_dim, self.num_heads, self.adaptive_ratio, self.Gh, self.Gw, self.adaptive_mlp_ratio, self.layer_norm_eps)(x)
+            x = x.reshape(b, t, -1, self.emb_dim)
 
         x = TimeAggregation(
             num_latents=1,
@@ -262,7 +328,7 @@ class Vit(nn.Module):
             self.depth,
             self.num_heads,
             self.mlp_ratio,
-            self.layer_norm_eps,
+            self.layer_norm_eps
         )(x)
 
         x = nn.LayerNorm(epsilon=self.layer_norm_eps)(x)
@@ -307,6 +373,11 @@ class CVit(nn.Module):
     eps: float = 1e5
     layer_norm_eps: float = 1e-5
     embedding_type: str = "grid"
+    adaptive_token_merger: bool = False
+    adaptive_mlp_ratio: int = 4
+    Gh: int = 16
+    Gw: int = 16
+    adaptive_ratio: int = 2
 
     def setup(self):
         if self.embedding_type == "grid":
@@ -355,6 +426,11 @@ class CVit(nn.Module):
             self.num_heads,
             self.mlp_ratio,
             self.layer_norm_eps,
+            self.adaptive_token_merger,
+            self.adaptive_mlp_ratio,
+            self.Gh,
+            self.Gw,
+            self.adaptive_ratio
         )(x)
 
         x = nn.LayerNorm(epsilon=self.layer_norm_eps)(x)
