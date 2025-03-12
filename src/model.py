@@ -5,6 +5,7 @@ import flax.linen as nn
 import jax.numpy as jnp
 from einops import rearrange, repeat
 from jax.nn.initializers import normal, xavier_uniform
+from jax.image import resize
 
 
 # Positional embedding from masked autoencoder https://arxiv.org/abs/2111.06377
@@ -260,6 +261,7 @@ class Encoder(nn.Module):
     Gh: int = 16
     Gw: int = 16
     adaptive_ratio: int = 2
+    data_shape: tuple = (128, 128)
 
     @nn.compact
     def __call__(self, x):
@@ -275,17 +277,38 @@ class Encoder(nn.Module):
             t // self.patch_size[0],
         )
 
-        s_emb = self.variable(
-            "pos_emb",
-            "enc_s_emb",
-            s_emb_init,
-            self.emb_dim,
-            (h // self.patch_size[1], w // self.patch_size[2]),
-        )
+        # Initialize spatial embeddings with data_shape
+        if not self.adaptive_token_merger:
+            s_emb = self.variable(
+                "pos_emb",
+                "enc_s_emb",
+                s_emb_init,
+                self.emb_dim,
+                (h // self.patch_size[1], w // self.patch_size[2]),
+            )
+            x = x + t_emb.value[:, :, jnp.newaxis, :] + s_emb.value[:, jnp.newaxis, :, :]
+        else:
+            s_emb = self.variable(
+                "pos_emb",
+                "enc_s_emb",
+                s_emb_init,
+                self.emb_dim,
+                (self.data_shape[0] // self.patch_size[1], self.data_shape[1] // self.patch_size[2]),
+            )
 
-        x = x + t_emb.value[:, :, jnp.newaxis, :] + s_emb.value[:, jnp.newaxis, :, :]
+            # Reshape s_emb for resizing
+            curr_h, curr_w = h // self.patch_size[1], w // self.patch_size[2]
+            s_emb_flat = s_emb.value.reshape(1, -1, self.data_shape[0] // self.patch_size[1], self.data_shape[1] // self.patch_size[2])
+            
+            # Resize to current spatial dimensions
+            s_emb_resized = resize(s_emb_flat, shape=(1, self.emb_dim, curr_h, curr_w), method='bilinear')
+            s_emb_resized = s_emb_resized.reshape(-1, curr_h * curr_w, self.emb_dim)
+
+            # Add positional embeddings
+            x = x + t_emb.value[:, :, jnp.newaxis, :] + s_emb_resized[:, jnp.newaxis, :, :]
         
         if self.adaptive_token_merger:
+            print(f"adaptive_token_merger: {self.adaptive_token_merger}")
             x = x.reshape(b, t, h // self.patch_size[1], w // self.patch_size[2], self.emb_dim)
             x = AdaptiveTokenMerger(self.emb_dim, self.num_heads, self.adaptive_ratio, self.Gh, self.Gw, self.adaptive_mlp_ratio, self.layer_norm_eps)(x)
             x = x.reshape(b, t, -1, self.emb_dim)
@@ -377,7 +400,8 @@ class CVit(nn.Module):
     adaptive_mlp_ratio: int = 4
     Gh: int = 16
     Gw: int = 16
-    adaptive_ratio: int = 2
+    adaptive_ratio: int = 2,
+    data_shape: tuple = (128, 128)
 
     def setup(self):
         if self.embedding_type == "grid":
@@ -420,17 +444,18 @@ class CVit(nn.Module):
         coords = einops.repeat(coords, "n d -> b n d", b=b)
 
         x = Encoder(
-            self.patch_size,
-            self.emb_dim,
-            self.depth,
-            self.num_heads,
-            self.mlp_ratio,
-            self.layer_norm_eps,
-            self.adaptive_token_merger,
-            self.adaptive_mlp_ratio,
-            self.Gh,
-            self.Gw,
-            self.adaptive_ratio
+            patch_size=self.patch_size,
+            emb_dim=self.emb_dim,
+            depth=self.depth,
+            num_heads=self.num_heads,
+            mlp_ratio=self.mlp_ratio,
+            layer_norm_eps=self.layer_norm_eps,
+            adaptive_token_merger=self.adaptive_token_merger,
+            adaptive_mlp_ratio=self.adaptive_mlp_ratio,
+            Gh=self.Gh,
+            Gw=self.Gw,
+            adaptive_ratio=self.adaptive_ratio,
+            data_shape=self.data_shape  
         )(x)
 
         x = nn.LayerNorm(epsilon=self.layer_norm_eps)(x)
