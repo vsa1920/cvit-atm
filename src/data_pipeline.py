@@ -56,6 +56,57 @@ def prefetch(dataset, n_prefetch=None):
     return ds_iter
 
 
+def reduce_image_resolution(image, size):
+    """
+    Reduce image resolution using JAX's image resize functionality
+    
+    Args:
+        image (jnp.ndarray): Input image as a JAX NumPy array
+        target_size (tuple): Target (height, width) dimensions
+    
+    Returns:
+        jnp.ndarray: Resized image
+    """
+    # Resize the image
+    resized_image = jax.image.resize(
+        image, 
+        shape=(image.shape[0:3] + tuple(size) + image.shape[5:]),  # Preserve channel dimension
+        method='bilinear'  # Interpolation method
+    )
+    
+    return resized_image
+
+def batch_parser_multi(batch, target_sizes=None, rng = None, num_query_points = None):
+    # target_size has the form like: jnp.array([[128, 128], [64, 64], [96, 96]])
+    inputs, outputs = batch
+
+    if target_sizes is not None:
+
+        one_size = random.choice(rng, target_sizes)
+
+        inputs = reduce_image_resolution(inputs, one_size)
+    
+    batch_inputs = jnp.squeeze(inputs)
+    batch_outputs = jnp.squeeze(outputs)
+
+    b, h, w, c = batch_outputs.shape
+    x_star = jnp.linspace(0, 1, h)
+    y_star = jnp.linspace(0, 1, w)
+
+    x_star, y_star = jnp.meshgrid(x_star, y_star, indexing="ij")
+    batch_coords = jnp.hstack([x_star.flatten()[:, None], y_star.flatten()[:, None]])
+
+    batch_outputs = rearrange(batch_outputs, "b h w c -> b (h w) c")
+
+    if num_query_points is not None:
+        query_index = random.choice(
+            rng, batch_outputs.shape[1], (num_query_points,), replace=False
+        )
+        batch_coords = batch_coords[query_index]
+        batch_outputs = batch_outputs[:, query_index]
+
+    return batch_coords, batch_inputs, batch_outputs
+
 def batch_parser(batch, rng=None, num_query_points=None):
     inputs, outputs = batch
     # TODO: Support multi-GPU training

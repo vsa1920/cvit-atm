@@ -139,8 +139,7 @@ class CrossAttnBlock(nn.Module):
         y = nn.LayerNorm(epsilon=self.layer_norm_eps)(x)
         y = MlpBlock(self.emb_dim * self.mlp_ratio, self.emb_dim)(y)
         return x + y
-
-
+ 
 
 class AdaptiveTokenMerger(nn.Module):
     emb_dim: int
@@ -189,6 +188,7 @@ class AdaptiveTokenMerger(nn.Module):
             
             # Final residual
             y_flat = y_flat + mlp_out
+            # y_flat = mlp_out
             
             # Update for next iteration
             curr_x = y_flat.reshape(B, T, H, W, C)
@@ -262,7 +262,8 @@ class Encoder(nn.Module):
     Gw: int = 16
     adaptive_ratio: int = 2
     data_shape: tuple = (128, 128)
-
+    multi_resolution: bool = False,
+    atm_num_heads: int = 12
     @nn.compact
     def __call__(self, x):
         b, t, h, w, c = x.shape
@@ -278,7 +279,7 @@ class Encoder(nn.Module):
         )
 
         # Initialize spatial embeddings with data_shape
-        if not self.adaptive_token_merger:
+        if not self.multi_resolution:
             s_emb = self.variable(
                 "pos_emb",
                 "enc_s_emb",
@@ -310,7 +311,7 @@ class Encoder(nn.Module):
         if self.adaptive_token_merger:
             print(f"adaptive_token_merger: {self.adaptive_token_merger}")
             x = x.reshape(b, t, h // self.patch_size[1], w // self.patch_size[2], self.emb_dim)
-            x = AdaptiveTokenMerger(self.emb_dim, self.num_heads, self.adaptive_ratio, self.Gh, self.Gw, self.adaptive_mlp_ratio, self.layer_norm_eps)(x)
+            x = AdaptiveTokenMerger(self.emb_dim, self.atm_num_heads, self.adaptive_ratio, self.Gh, self.Gw, self.adaptive_mlp_ratio, self.layer_norm_eps)(x)
             x = x.reshape(b, t, -1, self.emb_dim)
 
         x = TimeAggregation(
@@ -401,6 +402,8 @@ class CVit(nn.Module):
     Gh: int = 16
     Gw: int = 16
     adaptive_ratio: int = 2,
+    atm_num_heads: int = 12,
+    multi_resolution: bool = False,
     data_shape: tuple = (128, 128)
 
     def setup(self):
@@ -455,7 +458,9 @@ class CVit(nn.Module):
             Gh=self.Gh,
             Gw=self.Gw,
             adaptive_ratio=self.adaptive_ratio,
-            data_shape=self.data_shape  
+            multi_resolution=self.multi_resolution,
+            data_shape=self.data_shape,
+            atm_num_heads=self.atm_num_heads
         )(x)
 
         x = nn.LayerNorm(epsilon=self.layer_norm_eps)(x)
