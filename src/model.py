@@ -160,7 +160,7 @@ class AdaptiveTokenMerger(nn.Module):
         
         while curr_h > self.Gh or curr_w > self.Gw:
             # Average pooling for token reduction
-            y = nn.avg_pool(curr_x, (self.Gh, self.Gw), strides=(self.Gh, self.Gw))
+            y = nn.avg_pool(curr_x, (self.adaptive_ratio, self.adaptive_ratio), strides=(self.adaptive_ratio, self.adaptive_ratio))
             B, T, H, W, C = y.shape
             
             # Reshape for attention
