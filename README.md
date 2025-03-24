@@ -1,67 +1,55 @@
-# Continuous Vision Transformer (CViT)
+# CViT: Compression using Adaptive Token Merger
 
+![ATM Architecture](figures/ATM.png)
 
-![master_figure-2](figures/cvit_arch.png)
+This repository implements the Adaptive Token Merger (ATM) for CViT, which tackles the challenge of resolution scalability in Vision Transformers through efficient token compression and linear attention scaling.
 
-This repository contains code and data accompanying the manuscript titled [Bridging Operator Learning and Conditioned Neural Fields: A Unifying Perspective](https://arxiv.org/abs/2405.13998)
+## Key Features
 
-## Abstract
-
-Operator learning is an emerging area of machine learning which aims to learn mappings between infinite dimensional function spaces. Here we uncover a connection between operator learning architectures and conditioned neural fields from computer vision, providing a unified perspective for examining differences between popular operator learning models. We find that many commonly used operator learning models can be viewed as neural fields with conditioning mechanisms restricted to point-wise and/or global information. Motivated by this, we propose the Continuous Vision Transformer (CViT), a novel neural operator architecture that employs a vision transformer encoder and uses cross-attention to modulate a base field constructed with a trainable grid-based positional encoding of query coordinates. Despite its simplicity, CViT achieves state-of-the-art results across challenging benchmarks in climate modeling and fluid dynamics. Our contributions can be viewed as a first step towards adapting advanced computer vision architectures for building more flexible and accurate machine learning models in the physical sciences.
-
+- **Dynamic Resolution Adjustment**: Utilizes a single Transformer block for efficient incremental token integration
+- **Linear Attention Scaling**: ATM compresses tokens to achieve linear attention complexity
+- **Resolution Scalability**: Achieves 83.3% top-1 accuracy at 1120x1120 and 80.4% at 4032x4032
+- **Efficient Computation**: Reduces computational costs while maintaining high performance
+- **Downstream Task Support**: Strong performance in instance and semantic segmentation
+- **MAE Compatible**: Can be easily combined with Masked AutoEncoder techniques
 
 ## Installation
 
-First install the required dependencies by running the following commands:
-
-```
-pip3 install -U pip
-pip3 install --upgrade jax jaxlib
-pip3 install --upgrade -r requirements.txt
+```bash
+pip install -r requirements.txt
 ```
 
-Then install the `cvit` package by running the following command:
+## Usage
 
-```
-git clone https://github.com/PredictiveIntelligenceLab/cvit.git
-cd cvit
-pip install -e .
-```
+[Usage instructions will be added]
 
+## Model Architecture
 
-## Experiments
+The implementation features the Adaptive Token Merger (ATM):
 
-### Advection 
-
-Further instructions and details on the training and evaluation of the models can be found [here](./adv/README.md).
-
-### Shallow Water 
-
-Further instructions and details on the training and evaluation of the models can be found [here](./swe/README.md).
-
-### Navier-Stokes 
-
-Further instructions and details on the training and evaluation of the models can be found [here](./ns/README.md).
-
-### Diffusion-Reaction
-
-Further instructions and details on the training and evaluation of the models can be found [here](./dr/README.md).
-
-
-
-## Checkpoints
-
-Checkpoints for our best models on each benchmark are available [here](https://drive.google.com/drive/folders/1XcyzV8yEx0xu_fT6QbRTccIytP0hyNft?usp=sharing).
-To restore the trained models, download the checkpoints and place them in the respective benchmark directory, e.g., `swe/` or `ns/`.
-
+- **Adaptive Token Merger (ATM)**
+  - Single Transformer block design
+  - Efficient token integration
+  - Dynamic resolution handling
+  - Seamless multi-resolution input processing
+  - Token compression for linear attention scaling
+  - Adaptive token reduction based on input resolution
 
 ## Citation
-    @article{wang2024bridging,
-      title={Bridging Operator Learning and Conditioned Neural Fields: A Unifying Perspective},
-      author={Wang, Sifan and Seidman, Jacob H and Sankaran, Shyam and Wang, Hanwen and Pappas, George J and Perdikaris, Paris},
-      journal={arXiv preprint arXiv:2405.13998},
-      year={2024}
-    }
 
+```bibtex
+@article{fan2024vitar,
+  title={ViTAR: Vision Transformer with Any Resolution},
+  author={Fan, Qihang and You, Quanzeng and Han, Xiaotian and Liu, Yongfei and Tao, Yunzhe and Huang, Huaibo and He, Ran and Yang, Hongxia},
+  journal={arXiv preprint arXiv:2403.18361},
+  year={2024}
+}
+```
 
+---
 
+# Additional Resources
+
+## CViT Implementation
+
+For details about the original CViT implementation, please see [CViT_README.md](CViT_README.md). 
