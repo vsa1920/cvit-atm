@@ -1,4 +1,7 @@
 import os
+import sys
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, project_root)
 
 import time
 import ml_collections
@@ -17,7 +20,7 @@ from src.utils import (
     create_train_step,
     create_eval_step,
 )
-from src.data_pipeline import create_dataloaders, batch_parser
+from src.data_pipeline import create_dataloaders, batch_parser, batch_parser_multi
 
 from ns_pipeline import create_ns_datasets
 
@@ -55,7 +58,10 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
         rng, _ = random.split(rng)
 
         batch = next(train_iter)
-        batch = batch_parser(batch, rng, config.dataset.num_query_points)
+        if model.multi_resolution:
+            batch = batch_parser(batch, rng, config.dataset.num_query_points)
+        else:
+            batch = batch_parser_multi(batch, config.dataset.target_sizes, rng, config.dataset.num_query_points)
         state, loss = train_step_fn(state, batch)
 
         # Evaluate model
@@ -64,7 +70,10 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
             smse_list = []
             for _ in range(config.logging.eval_steps):
                 batch = next(test_iter)
-                batch = batch_parser(batch)
+                if model.multi_resolution:
+                    batch = batch_parser(batch, rng, config.dataset.num_query_points)
+                else:
+                    batch = batch_parser_multi(batch, config.dataset.target_sizes, rng, config.dataset.num_query_points)
                 l2_error, smse = eval_step_fn(state, batch)
                 l2_error_list.append(l2_error)
                 smse_list.append(smse)
@@ -102,3 +111,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
         ) or step == config.training.num_steps - 1:
             ckpt_mngr.save(step, args=ocp.args.StandardSave(state))
             last_loss = loss
+        
+    # Let the checkpoint save before async shutdown
+    time.sleep(1)
+
