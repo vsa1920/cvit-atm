@@ -10,7 +10,7 @@ import wandb
 from jax import random, vmap, jit
 import jax.numpy as jnp
 import orbax.checkpoint as ocp
-
+import jax
 
 from src.model import CVit
 from src.utils import (
@@ -24,10 +24,12 @@ from src.data_pipeline import create_dataloaders, batch_parser, batch_parser_mul
 
 from ns_pipeline import create_ns_datasets
 
+device = jax.devices()[0]
 
 def train_and_evaluate(config: ml_collections.ConfigDict):
     # Initialize model
     model = CVit(**config.model)
+    print("Multi-resolution: ", model.multi_resolution)
     # Create learning rate schedule and optimizer
     lr, tx = create_optimizer(config)
     state = create_train_state(config, model, tx)
@@ -58,19 +60,19 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
         rng, _ = random.split(rng)
 
         batch = next(train_iter)
-        if model.multi_resolution:
+        if not model.multi_resolution:
             batch = batch_parser(batch, rng, config.dataset.num_query_points)
         else:
             batch = batch_parser_multi(batch, config.dataset.target_sizes, rng, config.dataset.num_query_points)
         state, loss = train_step_fn(state, batch)
-
+        
         # Evaluate model
         if step % config.logging.log_interval == 0:
             l2_error_list = []
             smse_list = []
             for _ in range(config.logging.eval_steps):
                 batch = next(test_iter)
-                if model.multi_resolution:
+                if not model.multi_resolution:
                     batch = batch_parser(batch, rng, config.dataset.num_query_points)
                 else:
                     batch = batch_parser_multi(batch, config.dataset.target_sizes, rng, config.dataset.num_query_points)
@@ -104,14 +106,14 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
                 )
                 # if revert to last checkpoint, skip the rest of the loop
                 continue
-
+                
         # Save checkpoints
         if (
             step % config.saving.save_interval == 0 and loss < last_loss
         ) or step == config.training.num_steps - 1:
             ckpt_mngr.save(step, args=ocp.args.StandardSave(state))
             last_loss = loss
-        
+    
     # Let the checkpoint save before async shutdown
     time.sleep(1)
 
